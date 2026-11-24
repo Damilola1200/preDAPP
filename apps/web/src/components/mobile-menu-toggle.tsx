@@ -1,5 +1,20 @@
 "use client";
-export function MobileMenuToggle() {
- function toggle() { document.body.classList.toggle("mobile-nav-open"); }
- return <button className="mobile-menu" onClick={toggle} aria-label="Toggle navigation">☰</button>;
-}
+
+import { forwardRef } from "react";
+
+type MobileMenuToggleProps = {
+  isOpen: boolean;
+  onToggle: () => void;
+};
+
+export const MobileMenuToggle = forwardRef<HTMLButtonElement, MobileMenuToggleProps>(function MobileMenuToggle({ isOpen, onToggle }, ref) {
+  return <button
+    ref={ref}
+    className="mobile-menu"
+    type="button"
+    aria-label={isOpen ? "Close navigation menu" : "Open navigation menu"}
+    aria-expanded={isOpen}
+    aria-controls="app-sidebar"
+    onClick={onToggle}
+  >{isOpen ? "×" : "☰"}</button>;
+});

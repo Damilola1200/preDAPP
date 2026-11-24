@@ -1,22 +1,5 @@
-import { ApiStatus } from "@/components/api-status";
 import { MarketList } from "@/components/market-list";
-import { MarketSearch } from "@/components/market-search";
-import { MobileMenuToggle } from "@/components/mobile-menu-toggle";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { WalletConnectButton } from "@/components/wallet-connect-button";
-import { SolanaRpcStatus } from "@/components/solana-rpc-status";
 import { mockOpportunities } from "@/lib/mock-markets";
-
-const nav = [
-  { icon: "⌂", label: "Explore", href: "/", active: true },
-  { icon: "▤", label: "Markets", href: "/markets" },
-  { icon: "↗", label: "Trade", href: "/trade" },
-  { icon: "⇄", label: "Arbitrage Opportunities", href: "/arbitrage-opportunities" },
-  { icon: "◫", label: "Portfolio", href: "/portfolio" },
-  { icon: "▥", label: "Analytics", href: "/analytics" },
-  { icon: "◉", label: "Liquidity", href: "/liquidity" },
-  { icon: "⌘", label: "Developers / API", href: "/developers-api" },
-];
 
 function Chart() {
   return <div className="chart-wrap">
@@ -37,23 +20,7 @@ function Metric({ label, value, foot, positive = false }: { label: string; value
 }
 
 export default function Home() {
-  return <div className="shell">
-    <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">N</span>northstar</div>
-      <div className="nav-label">Workspace</div>
-      <nav>{nav.map(item => <a className={`nav-link ${item.active ? "active" : ""}`} href={item.href} key={item.label}><span className="nav-icon">{item.icon}</span>{item.label}</a>)}</nav>
-      <div className="side-bottom">
-        <a className="nav-link" href="/settings"><span className="nav-icon">⚙</span>Settings</a>
-        <SolanaRpcStatus />
-        <ApiStatus />
-      </div>
-    </aside>
-    <section className="workspace">
-      <header className="topbar">
-        <div className="crumb"><MobileMenuToggle />Workspace&nbsp; / &nbsp;<b style={{ color: "#35404b" }}>Explore</b></div>
-        <div className="top-actions"><MarketSearch /><ThemeToggle /><button className="icon-btn" aria-label="Notifications">♧</button><WalletConnectButton /><span className="avatar">G</span></div>
-      </header>
-      <main className="main">
+  return <main className="main">
         <div className="page-heading"><div><p className="eyebrow">TUESDAY, NOVEMBER 24, 2026</p><h1 className="title">Good morning, trader</h1><p className="sub">A clearer view of what the world thinks will happen.</p></div><span className="demo-tag"><i className="dot" /> SUMMARY DEMO METRICS</span></div>
         <section className="cards" aria-label="Market summary">
           <Metric label="Markets tracked" value="1,284" foot="Across 6 categories" />
@@ -71,7 +38,5 @@ export default function Home() {
             </div>
           </div>
         </section>
-      </main>
-    </section>
-  </div>;
+  </main>;
 }
