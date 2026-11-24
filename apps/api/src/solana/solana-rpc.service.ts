@@ -6,7 +6,7 @@ const allowedMethods = new Set([
   'getHealth', 'getSlot', 'getVersion', 'getBlockHeight', 'getEpochInfo', 'getLatestBlockhash',
   'getBalance', 'getAccountInfo', 'getMultipleAccounts', 'getTokenAccountsByOwner',
   'getTokenAccountBalance', 'getSignatureStatuses', 'getTransaction', 'getProgramAccounts', 'getGenesisHash',
-  'getMinimumBalanceForRentExemption', 'getFeeForMessage',
+  'getMinimumBalanceForRentExemption', 'getFeeForMessage', 'simulateTransaction',
 ]);
 const rpcRequest = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number()]), method: z.string(), params: z.union([z.array(z.unknown()), z.record(z.unknown())]).optional() });
 const healthTimeoutMs = 3_000;

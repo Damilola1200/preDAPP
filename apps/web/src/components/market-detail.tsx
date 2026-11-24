@@ -4,10 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { MarketList } from "@/components/market-list";
+import { apiBaseUrl } from "@/lib/api-url";
 
 type Detail = { id: string; venue: string; venueName: string; venueUrl: string | null; question: string; description: string | null; resolutionCriteria: string | null; resolutionSource: string | null; expiresAt: string | null; active: boolean; closed: boolean; volume: number | null; volume24h: number | null; liquidity: number | null; observedAt: string; outcomes: { name: string; probability: number | null; bestBid: number | null; bestAsk: number | null; depth: number | null; bookObservedAt: string | null }[] };
 type History = { fetchedAt: string; points: { timestamp: string; price: number; resolutionSeconds: number | null }[]; error: string | null };
-const base = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+const base = apiBaseUrl;
 const money = (x: number | null) => x === null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 2 }).format(x);
 export function MarketDetail() {
  const params = useParams<{ venue: string; id: string }>();

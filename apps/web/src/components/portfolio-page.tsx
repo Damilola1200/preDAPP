@@ -3,9 +3,10 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useQuery } from "@tanstack/react-query";
 import { SolanaRpcStatus } from "@/components/solana-rpc-status";
 import { WalletConnectButton } from "@/components/wallet-connect-button";
+import { apiBaseUrl } from "@/lib/api-url";
 
 type RpcHealth = { network: string; configured: boolean; http: string; websocket: string };
-const api = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+const api = apiBaseUrl;
 export function PortfolioPage() {
  const { connected, publicKey } = useWallet();
  const health = useQuery({ queryKey: ["solana-rpc-health"], queryFn: async () => { const response = await fetch(`${api}/api/v1/solana/rpc/health`); if (!response.ok) throw new Error("RPC health unavailable."); return response.json() as Promise<RpcHealth>; }, refetchInterval: 30_000, retry: false });

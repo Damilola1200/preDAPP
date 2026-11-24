@@ -26,6 +26,10 @@ pnpm dev
 
 Use `pnpm build` followed by `pnpm start` to run the production builds. The API process can start without the backing services; `/api/v1/health/ready` reports whether PostgreSQL and Redis are reachable.
 
+## Vercel web deployment
+
+The root `vercel.json` runs the Next.js workspace build and points Vercel at the generated `apps/web/.next-production` directory. In Vercel, set **Root Directory** to the repository root (`.`), use the Next.js framework preset, and redeploy. Configure `NEXT_PUBLIC_API_URL` as the public HTTPS origin of a separately deployed NestJS API; set that API's `WEB_ORIGIN` to the exact Vercel site origin. A Vercel frontend deployment alone does not deploy the API, PostgreSQL, Redis, or enable trading. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for production blockers.
+
 Web: http://localhost:3000. API liveness: http://localhost:4000/api/v1/health. Storage readiness: http://localhost:4000/api/v1/health/ready. Swagger: http://localhost:4000/api/docs. WebSocket gateway: `/events` (connection establishment only; no venue feed is claimed).
 
 ## Environment

@@ -1,8 +1,9 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
+import { apiBaseUrl } from "@/lib/api-url";
 
 type RpcStatus = { network: "devnet" | "mainnet"; configured: boolean; executionEnabled: false; http: string; websocket: string; checkedAt?: string };
-const api = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+const api = apiBaseUrl;
 export function SolanaRpcStatus() {
  const status = useQuery({ queryKey: ["solana-rpc-health"], queryFn: async () => { const response = await fetch(`${api}/api/v1/solana/rpc/health`); if (!response.ok) throw new Error("RPC health check unavailable"); return response.json() as Promise<RpcStatus>; }, refetchInterval: 30_000, retry: false });
  if (status.isError) return <div className="rpc-status error">Solana RPC status unavailable</div>;

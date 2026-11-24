@@ -25,4 +25,14 @@ describe('SolanaRpcService', () => {
     const service = new SolanaRpcService(config({ SOLANA_NETWORK: 'devnet', SOLANA_RPC_URL: 'https://rpc.invalid', SOLANA_WS_URL: 'wss://rpc.invalid' }));
     await expect(service.proxy({ method: 'getBalance' })).rejects.toThrow('Invalid JSON-RPC');
   });
+
+  it('allows unsigned transaction simulation through the read-only RPC proxy', async () => {
+    const service = new SolanaRpcService(config({ SOLANA_NETWORK: 'devnet', SOLANA_RPC_URL: 'https://rpc.invalid', SOLANA_WS_URL: 'wss://rpc.invalid' }));
+    const fetch = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ jsonrpc: '2.0', id: 1, result: { value: { err: null } } }) } as Response);
+    try {
+      await expect(service.proxy({ jsonrpc: '2.0', id: 1, method: 'simulateTransaction', params: ['unsigned-base64', { sigVerify: false }] })).resolves.toMatchObject({ result: { value: { err: null } } });
+    } finally {
+      fetch.mockRestore();
+    }
+  });
 });

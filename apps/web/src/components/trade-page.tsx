@@ -1,12 +1,13 @@
 "use client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { apiBaseUrl } from "@/lib/api-url";
 
 type Outcome = { name: string; probability: number | null; bids: { price: number; size: number }[]; asks: { price: number; size: number }[]; bookLevelsObservedAt: string | null };
 type Market = { id: string; question: string; venueName: string; outcomes: Outcome[] };
 type Snapshot = { markets: Market[] };
 type Quote = { outcome: string; side: "BUY" | "SELL"; requestedShares: number; filledShares: number; remainingShares: number; complete: boolean; status: string; stale: boolean; asOf: string | null; bestPrice: number | null; averagePrice: number | null; slippagePerShare: number | null; slippagePercent: number | null; grossVenueAmount: number; feeStatus: string; estimatedVenueFee: number | null; estimatedVenueTotal: number | null; networkCost: number | null; allInComplete: boolean; executable: boolean; notice: string };
-const api = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+const api = apiBaseUrl;
 const money = (value: number | null) => value === null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
 
 export function TradePage() {

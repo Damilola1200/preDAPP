@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { MarketAccount } from "@pm-amm/sdk";
-import { predictMarketMetrics, predictUsdcBuyQuote } from "./predict-pm-amm";
+import { minimumOutputFromSimulation, predictMarketMetrics } from "./predict-pm-amm";
 
 const scale = 2n ** 48n;
 const bn = (value: number | bigint) => ({ toNumber: () => Number(value), toString: () => String(value) });
 function account(overrides: Partial<MarketAccount> = {}): MarketAccount {
- return {
+ const fixture = {
    endTs: bn(1_900_000_000), lastAccrualTs: bn(1_800_000_000), lZero: bn(10n * scale),
    reserveYes: bn(5n * scale), reserveNo: bn(5n * scale), resolved: false, winningSide: 0,
-   marketId: bn(1), ...({} as MarketAccount), ...overrides,
- } as MarketAccount;
+   marketId: bn(1),
+ } as unknown as MarketAccount;
+ return Object.assign(fixture, overrides);
 }
 
 describe("PREDICT pm-AMM analytics and quote guard", () => {
@@ -21,16 +22,14 @@ describe("PREDICT pm-AMM analytics and quote guard", () => {
    expect(metrics.liquidityValue).toBeGreaterThan(0);
    expect(metrics.isOpen).toBe(true);
  });
- it("applies the official 2% USDC-leg fee and capped minimum output", () => {
-   const quote = predictUsdcBuyQuote(account(), "yes", 10, 100, 1_850_000_000);
-   expect(quote?.direction).toBe("usdcToYes");
-   expect(quote?.feeUsdc).toBeCloseTo(0.2, 6);
-   expect(quote?.minimumOutputRaw).toBeGreaterThan(0);
-   expect(quote!.minimumOutputRaw / 1_000_000).toBeLessThan(quote!.estimate.output);
+ it("applies the capped minimum output to an exact simulation result", () => {
+   expect(minimumOutputFromSimulation(1_000_000, 100)).toBe(990_000);
+   expect(minimumOutputFromSimulation(1_000_000, 300)).toBe(970_000);
  });
- it("fails closed for stale/invalid risk inputs and expired markets", () => {
-   expect(predictUsdcBuyQuote(account(), "no", 0, 100, 1_850_000_000)).toBeNull();
-   expect(predictUsdcBuyQuote(account(), "no", 10, 301, 1_850_000_000)).toBeNull();
-   expect(predictUsdcBuyQuote(account({ endTs: bn(1_800_000_000) }), "yes", 1, 100, 1_850_000_000)).toBeNull();
+ it("fails closed for invalid simulation output, slippage, and expired markets", () => {
+   expect(minimumOutputFromSimulation(0, 100)).toBeNull();
+   expect(minimumOutputFromSimulation(Number.MAX_SAFE_INTEGER + 1, 100)).toBeNull();
+   expect(minimumOutputFromSimulation(1_000_000, 301)).toBeNull();
+   expect(predictMarketMetrics(account({ endTs: bn(1_800_000_000) }), 1_850_000_000).isOpen).toBe(false);
  });
 });

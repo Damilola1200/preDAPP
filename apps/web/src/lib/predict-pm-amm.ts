@@ -1,5 +1,5 @@
-import { estimateSwapOutput, expectedDailyLvr, i80f48ToNumber, poolValue, priceFromReserves } from '@pm-amm/sdk/math';
-import type { MarketAccount, SwapDirection } from '@pm-amm/sdk';
+import { expectedDailyLvr, i80f48ToNumber, poolValue, priceFromReserves } from '@pm-amm/sdk/math';
+import type { MarketAccount } from '@pm-amm/sdk';
 
 export interface PredictMarketMetrics {
   priceYes: number | null;
@@ -32,16 +32,9 @@ export function predictMarketMetrics(account: MarketAccount, nowSecs = Math.floo
     expectedDailyLvr: priceYes !== null && isOpen ? expectedDailyLvr(priceYes, lEff, remainingSecs) : null, isOpen };
 }
 
-/** PREDICT SDK math estimate for USDC buys; fees and slippage are displayed, then enforced by on-chain minOutput. */
-export function predictUsdcBuyQuote(account: MarketAccount, side: 'yes' | 'no', amountUsdc: number, slippageBps: number, nowSecs = Math.floor(Date.now() / 1000)) {
-  if (!Number.isFinite(amountUsdc) || amountUsdc <= 0 || !Number.isInteger(slippageBps) || slippageBps < 0 || slippageBps > 300) return null;
-  const metrics = predictMarketMetrics(account, nowSecs);
-  if (!metrics.isOpen) return null;
-  const feeUsdc = amountUsdc * 0.02;
-  const estimate = estimateSwapOutput(metrics.reserveYes, metrics.reserveNo, metrics.lEff, amountUsdc - feeUsdc, side);
-  if (!Number.isFinite(estimate.output) || estimate.output <= 0) return null;
-  const minimumOutputRaw = Math.floor(estimate.output * (1 - slippageBps / 10_000) * 1_000_000);
-  if (!Number.isSafeInteger(minimumOutputRaw) || minimumOutputRaw <= 0) return null;
-  const direction: SwapDirection = side === 'yes' ? 'usdcToYes' : 'usdcToNo';
-  return { direction, estimate, feeUsdc, minimumOutputRaw, metrics };
+/** Calculate minOutput only from an unsigned transaction simulation result, never from model math. */
+export function minimumOutputFromSimulation(outputRaw: number, slippageBps: number) {
+  if (!Number.isSafeInteger(outputRaw) || outputRaw <= 0 || !Number.isInteger(slippageBps) || slippageBps < 0 || slippageBps > 300) return null;
+  const minimum = Math.floor(outputRaw * (1 - slippageBps / 10_000));
+  return Number.isSafeInteger(minimum) && minimum > 0 ? minimum : null;
 }

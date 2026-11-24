@@ -2,11 +2,15 @@
 import { AnchorProvider } from "@anchor-lang/core";
 import { decodeName, i80f48ToNumber, PmAmmClient, solscanTxUrl, type MarketAccount } from "@pm-amm/sdk";
 import { PublicKey } from "@solana/web3.js";
+import { ComputeBudgetProgram, Transaction } from "@solana/web3.js";
+import { createAssociatedTokenAccountInstruction, getAssociatedTokenAddress } from "@solana/spl-token";
+import { PROTOCOL_DAO, SWAP_FEE_BPS, type SwapDirection } from "@pm-amm/sdk";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { PREDICT_DEVNET_COLLATERAL_MINT, PREDICT_PROGRAM_ID } from "@/lib/predict-constants";
-import { predictMarketMetrics, predictUsdcBuyQuote } from "@/lib/predict-pm-amm";
+import { minimumOutputFromSimulation, predictMarketMetrics } from "@/lib/predict-pm-amm";
+import { apiBaseUrl } from "@/lib/api-url";
 import { WalletConnectButton } from "@/components/wallet-connect-button";
 
 type Mode = "trade" | "liquidity" | "analytics";
@@ -14,7 +18,48 @@ type AccountRow = { publicKey: PublicKey; account: MarketAccount };
 type RpcHealth = { network: "devnet" | "mainnet"; configured: boolean; http: string; websocket: string; devnetVerified?: boolean; transactionRelayEnabled?: boolean };
 type RiskQuote = { market: string; side: "yes" | "no"; amount: number; slippageBps: number; minimumOutputRaw: number; expectedOutput: number; feeUsdc: number; createdAt: number };
 
-const api = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+function tokenAmount(data: Uint8Array | string[]) {
+ const bytes = data instanceof Uint8Array ? data : Uint8Array.from(atob(data[0] ?? ""), character => character.charCodeAt(0));
+ if (bytes.byteLength < 72) throw new Error("Simulated token account data was incomplete.");
+ return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(64, true);
+}
+
+async function simulateBuyOutput(client: PmAmmClient, connection: ReturnType<typeof useConnection>["connection"], market: AccountRow, side: "yes" | "no", amountRaw: number, payer: PublicKey) {
+ const marketKey = market.publicKey;
+ const usdcAta = await getAssociatedTokenAddress(collateralMint, payer);
+ const yesAta = await getAssociatedTokenAddress(market.account.yesMint, payer);
+ const noAta = await getAssociatedTokenAddress(market.account.noMint, payer);
+ const creator = market.account.authority;
+ const creatorAta = await getAssociatedTokenAddress(collateralMint, creator, true);
+ const daoAta = await getAssociatedTokenAddress(collateralMint, PROTOCOL_DAO, true);
+ const accounts = [usdcAta, yesAta, noAta, creatorAta, daoAta];
+ const infos = await Promise.all(accounts.map(address => connection.getAccountInfo(address)));
+ const preInfo = side === "yes" ? infos[1] : infos[2];
+ const pre = preInfo ? tokenAmount(preInfo.data) : 0n;
+ const plannedAtas = new Set<string>();
+ const ataIxs = accounts.flatMap((address, index) => {
+   const key = address.toBase58();
+   if (infos[index] || plannedAtas.has(key)) return [];
+   plannedAtas.add(key);
+   const owner = index === 3 ? creator : index === 4 ? PROTOCOL_DAO : payer;
+   return [createAssociatedTokenAccountInstruction(payer, address, owner, collateralMint)];
+ });
+ const direction: SwapDirection = side === "yes" ? "usdcToYes" : "usdcToNo";
+ const swapIx = await client.ix.swap({ signer: payer, market: marketKey, direction, amountIn: amountRaw, minOutput: 0, creatorAuthority: creator, collateralMint });
+ const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), ...ataIxs, swapIx);
+ tx.feePayer = payer;
+ const simulation = await connection.simulateTransaction(tx, undefined, [side === "yes" ? yesAta : noAta]);
+ if (simulation.value.err) throw new Error(simulation.value.logs?.slice(-3).join(" ") || "Devnet could not simulate this swap.");
+ const resultAccount = simulation.value.accounts?.[0];
+ if (!resultAccount) throw new Error("Devnet did not return the simulated outcome token balance.");
+ const post = tokenAmount(resultAccount.data);
+ if (post < pre) throw new Error("Devnet simulation returned an invalid outcome token balance.");
+ const output = post - pre;
+ if (output <= 0n || output > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Devnet did not produce a safe, positive swap quote.");
+ return Number(output);
+}
+
+const api = apiBaseUrl;
 const programId = new PublicKey(PREDICT_PROGRAM_ID);
 const collateralMint = new PublicKey(PREDICT_DEVNET_COLLATERAL_MINT);
 const usd = (n: number | null | undefined) => n == null || !Number.isFinite(n) ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
@@ -92,18 +137,27 @@ export function PredictPmAmmConsole({ mode }: { mode: Mode }) {
    try {
      const fresh = await client.fetchMarket(selected.publicKey);
      if (!fresh) throw new Error("The selected market is no longer available.");
-     const result = predictUsdcBuyQuote(fresh, buySide, limits.amount, limits.slip);
-     if (!result) throw new Error("A safe quote could not be calculated for this market state.");
+     const amountRaw = Math.floor(limits.amount * 1_000_000);
+     const expectedOutputRaw = await simulateBuyOutput(client, connection, { publicKey: selected.publicKey, account: fresh }, buySide, amountRaw, anchorWallet!.publicKey);
+     const minimumOutputRaw = minimumOutputFromSimulation(expectedOutputRaw, limits.slip);
+     if (minimumOutputRaw === null) throw new Error("A safe minimum output could not be calculated for this market state.");
      setQuote({ market: selectedId, side: buySide, amount: limits.amount, slippageBps: limits.slip,
-       minimumOutputRaw: result.minimumOutputRaw, expectedOutput: result.estimate.output, feeUsdc: result.feeUsdc, createdAt: Date.now() });
-     setNotice({ kind: "info", text: "Estimate ready for 15 seconds. The on-chain minimum output enforces the selected slippage limit; the estimate is not guaranteed." });
+       minimumOutputRaw, expectedOutput: expectedOutputRaw / 1_000_000, feeUsdc: limits.amount * SWAP_FEE_BPS / 10_000, createdAt: Date.now() });
+     setNotice({ kind: "info", text: "Devnet transaction simulation ready for 15 seconds. It is an estimate; the on-chain minimum output enforces your selected limit." });
    } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not refresh the quote." }); }
  }
 
  function submitBuy() {
    if (!client || !selected || !quoteCurrent || !metrics?.isOpen || !maxSpendValid || quote!.amount > limits.maxSpend) return;
    const market = selected.publicKey; const amountMicro = Math.floor(quote!.amount * 1_000_000); const minOut = quote!.minimumOutputRaw;
-   return transact(`Buy ${quote!.side.toUpperCase()} with ${usd(quote!.amount)}`, () => client.send.swap(market, quote!.side === "yes" ? "usdcToYes" : "usdcToNo", amountMicro, minOut));
+   const reviewed = quote!;
+   return transact(`Buy ${reviewed.side.toUpperCase()} with ${usd(reviewed.amount)}`, async () => {
+     const fresh = await client.fetchMarket(market);
+     if (!fresh || fresh.resolved || fresh.endTs.toNumber() <= Math.floor(Date.now() / 1000)) throw new Error("Market changed or expired. Refresh the quote before signing.");
+     const currentOutput = await simulateBuyOutput(client, connection, { publicKey: market, account: fresh }, reviewed.side, amountMicro, anchorWallet!.publicKey);
+     if (currentOutput < minOut) throw new Error("The fresh simulation no longer meets your reviewed minimum output. Refresh the quote before signing.");
+     return client.send.swap(market, reviewed.side === "yes" ? "usdcToYes" : "usdcToNo", amountMicro, minOut);
+   });
  }
 
  function createMarket() {
@@ -146,7 +200,7 @@ export function PredictPmAmmConsole({ mode }: { mode: Mode }) {
    </section>
    {mode === "trade" && <section className="panel predict-operation-grid">
      <div className="predict-operation"><h2 className="panel-title">Create a binary market</h2><p className="panel-note">Your wallet becomes the market resolver. Resolution is centralized by the protocol design.</p><label>Question (64 bytes max)<input value={createName} maxLength={64} onChange={event => setCreateName(event.target.value)} placeholder="Will …?" /></label><div className="predict-form-row"><label>Duration (days)<input type="number" min="0.21" max="3650" value={createDays} onChange={event => setCreateDays(event.target.value)} /></label><label>Initial YES price (bps)<input type="number" min="100" max="9900" step="100" value={createPrice} onChange={event => setCreatePrice(event.target.value)} /></label><label>Initial liquidity (mUSDC)<input type="number" min="0.1" max={Math.min(100, maxSpendValid ? limits.maxSpend : 0)} step="0.1" value={createDeposit} onChange={event => setCreateDeposit(event.target.value)} /></label></div><button className="simulate-button" disabled={!canRelay || pending || !createName.trim() || !maxSpendValid} onClick={createMarket}>Review and sign market creation</button></div>
-     <div className="predict-operation"><h2 className="panel-title">Buy YES / NO</h2><p className="panel-note">2% fee applies to the USDC input. The SDK model estimate is not a guaranteed output.</p><label>Market<select value={selectedId} onChange={event => setMarketAddress(event.target.value)}>{marketRows.map(row => <option key={row.publicKey.toBase58()} value={row.publicKey.toBase58()}>{accountName(row.account)}</option>)}</select></label><div className="predict-form-row"><label>Outcome<select value={buySide} onChange={event => setBuySide(event.target.value as "yes" | "no")}><option value="yes">Buy YES</option><option value="no">Buy NO</option></select></label><label>USDC input<input type="number" min="0.01" max={maxSpendValid ? limits.maxSpend : 0} step="0.01" value={buyAmount} onChange={event => setBuyAmount(event.target.value)} /></label><label>Slippage<select value={slippageBps} onChange={event => setSlippageBps(event.target.value)}><option value="50">0.5%</option><option value="100">1%</option><option value="200">2%</option><option value="300">3%</option></select></label></div><button className="retry-button" disabled={!client || !selected || !metrics?.isOpen || !amountValid || !maxSpendValid || Number(slippageBps) > 300 || markets.isFetching} onClick={() => void prepareQuote()}>{markets.isFetching ? "Refreshing markets…" : "Refresh quote estimate"}</button>{quote && <div className="predict-quote"><span>Estimated output: <b>{quote.expectedOutput.toFixed(4)} {quote.side.toUpperCase()}</b></span><span>PREDICT swap fee estimate: {usd(quote.feeUsdc)}</span><span>Minimum output at {quote.slippageBps} bps: {(quote.minimumOutputRaw / 1_000_000).toFixed(4)} tokens</span><span>Quote expires in 15 seconds. Model estimate may differ from execution.</span><button className="simulate-button" disabled={!canRelay || pending || !quoteCurrent || !metrics?.isOpen} onClick={() => void submitBuy()}>Review and sign Devnet swap</button></div>}</div>
+     <div className="predict-operation"><h2 className="panel-title">Buy YES / NO</h2><p className="panel-note">The exact-output estimate comes from an unsigned Devnet transaction simulation. A 2% fee applies to the USDC input. Execution is not guaranteed.</p><label>Market<select value={selectedId} onChange={event => setMarketAddress(event.target.value)}>{marketRows.map(row => <option key={row.publicKey.toBase58()} value={row.publicKey.toBase58()}>{accountName(row.account)}</option>)}</select></label><div className="predict-form-row"><label>Outcome<select value={buySide} onChange={event => setBuySide(event.target.value as "yes" | "no")}><option value="yes">Buy YES</option><option value="no">Buy NO</option></select></label><label>USDC input<input type="number" min="0.01" max={maxSpendValid ? limits.maxSpend : 0} step="0.01" value={buyAmount} onChange={event => setBuyAmount(event.target.value)} /></label><label>Slippage<select value={slippageBps} onChange={event => setSlippageBps(event.target.value)}><option value="50">0.5%</option><option value="100">1%</option><option value="200">2%</option><option value="300">3%</option></select></label></div><button className="retry-button" disabled={!client || !selected || !metrics?.isOpen || !amountValid || !maxSpendValid || Number(slippageBps) > 300 || markets.isFetching} onClick={() => void prepareQuote()}>{markets.isFetching ? "Refreshing markets…" : "Simulate exact quote"}</button>{quote && <div className="predict-quote"><span>Simulated output: <b>{quote.expectedOutput.toFixed(4)} {quote.side.toUpperCase()}</b></span><span>PREDICT swap fee estimate: {usd(quote.feeUsdc)}</span><span>Minimum output at {quote.slippageBps} bps: {(quote.minimumOutputRaw / 1_000_000).toFixed(4)} tokens</span><span>Simulation quote expires in 15 seconds; market state is simulated again before wallet signing.</span><button className="simulate-button" disabled={!canRelay || pending || !quoteCurrent || !metrics?.isOpen} onClick={() => void submitBuy()}>Review and sign Devnet swap</button></div>}</div>
    </section>}
    {(mode === "liquidity" || mode === "analytics") && <section className="panel predict-pool-panel"><div className="panel-head"><div><h2 className="panel-title">On-chain market state</h2><div className="panel-note">PREDICT PM-AMM account · {outcome} · refreshed every 30 seconds while this page is visible</div></div><button className="retry-button" onClick={() => void markets.refetch()} disabled={!client || markets.isFetching}>Refresh</button></div>
      {markets.isPending && <div className="empty-row">Waiting for a verified Devnet RPC and reading PREDICT market accounts…</div>}{markets.isError && <div className="empty-row source-badge error">PREDICT market read failed: {markets.error.message}</div>}{markets.data?.length === 0 && <div className="empty-row">No PREDICT markets were found on the configured Devnet program.</div>}

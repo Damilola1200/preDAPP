@@ -1,9 +1,10 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
+import { apiBaseUrl } from "@/lib/api-url";
 
 type Candidate = { left: { venue: string; question: string; probability: number | null; liquidity: number | null }; right: { venue: string; question: string; probability: number | null; liquidity: number | null }; classification: string; confidence: number; probabilityDifference: number | null; status: string; executable: false; reasons: string[] };
 type Report = { generatedAt: string; opportunities: Candidate[]; suppressed: Candidate[]; counts: { statistical: number; potentialExecutable: number; verifiedExecutable: number; suppressed: number }; executableOpportunitiesEnabled: false; sources: { venueName: string; stale: boolean; error: string | null }[]; notice: string };
-const api = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+const api = apiBaseUrl;
 const pct = (value: number | null) => value === null ? "Unavailable" : `${(value * 100).toFixed(1)}%`;
 const money = (value: number | null) => value === null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
 

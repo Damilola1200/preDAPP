@@ -3,12 +3,13 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { mockMarkets } from "@/lib/mock-markets";
+import { apiBaseUrl } from "@/lib/api-url";
 
 type Outcome = { name: string; probability: number | null; bestBid: number | null; bestAsk: number | null; depth: number | null; bookObservedAt: string | null };
 type Market = { id: string; venue: string; venueName: string; venueUrl: string | null; question: string; description: string | null; observedAt: string;
   category: string | null; tags: string[]; outcomes: Outcome[]; active: boolean; closed: boolean; volume: number | null; volume24h: number | null; liquidity: number | null };
 type Snapshot = { venue: string; venueName: string; sourceUrl: string; fetchedAt: string; stale: boolean; realtime: boolean; lastStreamAt: string | null; error: string | null; markets: Market[]; sources?: { venueName: string; stale: boolean; error: string | null }[] };
-const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+const apiUrl = apiBaseUrl;
 const useMock = process.env.NEXT_PUBLIC_DATA_MODE === "mock";
 const formatMoney = (value: number | null) => value === null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: value > 1_000_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
 const formatProbability = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(1)}%`;
