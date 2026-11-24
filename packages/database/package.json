@@ -1,0 +1,1 @@
+{"name":"@market/database","private":true,"scripts":{"db:generate":"prisma generate","db:migrate":"prisma migrate dev","db:deploy":"prisma migrate deploy"},"dependencies":{"@prisma/client":"^6.1.0"},"devDependencies":{"prisma":"^6.1.0"}}
