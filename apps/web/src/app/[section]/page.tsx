@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { MarketsPage } from "@/components/markets-page";
 const sections: Record<string, { title: string; description: string }> = {
  markets: { title: "Markets", description: "Unified market discovery will be added in Step 2." },
  trade: { title: "Trade", description: "Quote simulation and supported execution are planned for Step 3." },
@@ -12,6 +13,6 @@ const sections: Record<string, { title: string; description: string }> = {
 };
 export function generateStaticParams() { return Object.keys(sections).map(section => ({ section })); }
 export default async function SectionPage({ params }: { params: Promise<{ section: string }> }) {
- const { section } = await params; const content = sections[section]; if (!content) notFound();
+ const { section } = await params; if (section === 'markets') return <MarketsPage />; const content = sections[section]; if (!content) notFound();
  return <main className="main"><p className="eyebrow">WORKSPACE</p><h1 className="title">{content.title}</h1><section className="panel" style={{marginTop:24,padding:24}}><span className="demo-tag">FOUNDATION PLACEHOLDER</span><p className="sub" style={{marginTop:16}}>{content.description}</p><Link className="text-link" href="/">← Back to Explore</Link></section></main>;
 }

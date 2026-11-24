@@ -52,7 +52,7 @@ export default function Home() {
         <div className="top-actions"><MarketSearch /><ThemeToggle /><button className="icon-btn" aria-label="Notifications">♧</button><button className="connect" disabled title="External wallet connection is planned for Step 3">Wallet · Step 3</button><span className="avatar">G</span></div>
       </header>
       <main className="main">
-        <div className="page-heading"><div><p className="eyebrow">TUESDAY, NOVEMBER 24, 2026</p><h1 className="title">Good morning, trader</h1><p className="sub">A clearer view of what the world thinks will happen.</p></div><span className="demo-tag"><i className="dot" /> DEMO DATA</span></div>
+        <div className="page-heading"><div><p className="eyebrow">TUESDAY, NOVEMBER 24, 2026</p><h1 className="title">Good morning, trader</h1><p className="sub">A clearer view of what the world thinks will happen.</p></div><span className="demo-tag"><i className="dot" /> SUMMARY DEMO METRICS</span></div>
         <section className="cards" aria-label="Market summary">
           <Metric label="Markets tracked" value="1,284" foot="Across 6 categories" />
           <Metric label="24h volume" value="$8.42M" foot="↑ 12.8% vs. yesterday" positive />
@@ -60,7 +60,7 @@ export default function Home() {
           <Metric label="Opportunities" value="12" foot="3 with high confidence" positive />
         </section>
         <section className="content-grid">
-          <div className="panel"><div className="panel-head"><div><h2 className="panel-title">Trending markets</h2><div className="panel-note">What people are predicting right now</div></div><a className="text-link" href="/markets">Explore all →</a></div><MarketList /><div className="footer-note">Illustrative mock data · No live venue connection</div></div>
+          <div className="panel"><div className="panel-head"><div><h2 className="panel-title">Trending markets</h2><div className="panel-note">What people are predicting right now</div></div><a className="text-link" href="/markets">Explore all →</a></div><MarketList /><div className="footer-note">{process.env.NEXT_PUBLIC_DATA_MODE === "mock" ? "Illustrative mock data · No live venue connection" : "Read-only Polymarket data · One venue configured · Not tradeable here"}</div></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
             <div className="panel"><div className="panel-head"><div><h2 className="panel-title">Market momentum</h2><div className="panel-note">Illustrative probability · 7 days</div></div><span className="text-link">7D⌄</span></div><Chart /><div className="footer-note">Synthetic chart for layout preview</div></div>
             <div className="panel"><div className="panel-head"><div><h2 className="panel-title">Cross-venue spreads</h2><div className="panel-note">Potential differences to review</div></div><a className="text-link" href="/arbitrage-opportunities">View all →</a></div>
