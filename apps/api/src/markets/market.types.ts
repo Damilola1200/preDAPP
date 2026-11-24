@@ -1,4 +1,6 @@
-export type VenueId = 'polymarket';
+export type VenueId = 'polymarket' | 'predict';
+export interface BookLevel { price: number; size: number; }
+export interface MarketFeeSchedule { rate: number; exponent: number; takerOnly: boolean; rebateRate: number; }
 
 export interface MarketOutcome {
   name: string;
@@ -8,6 +10,9 @@ export interface MarketOutcome {
   bestAsk: number | null;
   depth: number | null;
   bookObservedAt: string | null;
+  bookLevelsObservedAt: string | null;
+  bids: BookLevel[];
+  asks: BookLevel[];
 }
 
 export interface AggregatedMarket {
@@ -29,13 +34,15 @@ export interface AggregatedMarket {
   volume: number | null;
   volume24h: number | null;
   liquidity: number | null;
+  feesEnabled: boolean | null;
+  feeSchedule: MarketFeeSchedule | null;
   sourceUpdatedAt: string | null;
   observedAt: string;
-  dataSource: 'gamma';
+  dataSource: 'gamma' | 'predict';
 }
 
 export interface MarketSnapshot {
-  venue: VenueId;
+  venue: VenueId | 'all';
   venueName: string;
   sourceUrl: string;
   fetchedAt: string;
@@ -45,6 +52,7 @@ export interface MarketSnapshot {
   lastStreamAt: string | null;
   error: string | null;
   markets: AggregatedMarket[];
+  sources?: Array<Pick<MarketSnapshot, 'venue' | 'venueName' | 'fetchedAt' | 'stale' | 'realtime' | 'lastStreamAt' | 'error'>>;
 }
 
 export interface PricePoint { timestamp: string; price: number; resolutionSeconds: number | null; }

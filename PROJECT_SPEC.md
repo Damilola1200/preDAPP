@@ -231,7 +231,26 @@ Implement supported Solana wallet connections using Solana Wallet Adapter.
 Support external wallet connectivity first.
 
 Design the architecture so optional embedded-wallet functionality can be added later.
+Configure Solana RPC connectivity for this project.
 
+Use environment variables rather than hardcoded RPC endpoints.
+
+Requirements:
+
+1. Support Devnet and Mainnet.
+2. Configure HTTP RPC and WebSocket connections.
+3. Read SOLANA_NETWORK, SOLANA_RPC_URL, and SOLANA_WS_URL from environment variables.
+4. Create a reusable Solana connection/provider service.
+5. Integrate the RPC provider with Solana Wallet Adapter and the PREDICT PM-AMM SDK.
+6. Keep API keys and private credentials out of frontend source code and Git.
+7. Add environment validation and clear connection errors.
+8. Implement retry handling, timeouts, and RPC health checks.
+9. Document how to configure the RPC provider.
+10. Use Devnet for all development and testing initially.
+
+Do not invent RPC credentials. I will supply the actual provider endpoints.
+
+Do not enable real-money trading or Mainnet execution during initial development.
 ### Smart Order Router
 
 Build an execution engine that evaluates supported venues before recommending or submitting an order.
@@ -321,25 +340,47 @@ Build the platform's advanced market infrastructure.
 
 This stage should provide differentiation beyond simply displaying markets from multiple platforms.
 
-### A. Native PM-AMM
+### A. :::writing{variant="document" id="73519"}
+## REQUIRED INTEGRATION: EXISTING PREDICT SOLANA PM-AMM
 
-Develop a prediction-market-specific automated market maker.
+Integrate the existing open-source PREDICT PM-AMM protocol before considering development of a replacement AMM.
 
-Use established PM-AMM research as a starting point.
+Official documentation:
+https://predict-pm-amm.dev/
 
-The design should investigate:
+Builder documentation:
+https://predict-pm-amm.dev/hackathon.md
 
-- Probability-based pricing
-- Liquidity distribution
-- Time-to-expiration effects
-- Liquidity-provider exposure
-- Inventory management
-- Trading fees
-- Slippage
-- Market resolution
-- Loss-versus-rebalancing considerations
+SDK:
+`@pm-amm/sdk`
 
-Do not copy a research formula into production without mathematical validation, simulations, and security review.
+### Integration requirements
+
+1. Study the official documentation, GitHub repository, SDK, and deployed program.
+2. Install and configure the official SDK.
+3. Connect to the correct Solana cluster.
+4. Integrate market creation, market reads, swaps, liquidity deposits, liquidity withdrawals, and winnings claims where supported.
+5. Build a frontend interface for interacting with supported PREDICT markets.
+6. Integrate PREDICT market data into the canonical market registry.
+7. Connect its liquidity and trading functionality to the platform's unified portfolio.
+8. Implement transaction monitoring and reconciliation.
+9. Validate all program addresses, account layouts, token mint addresses, and instruction requirements against official documentation.
+10. Build and test on Devnet before considering Mainnet.
+
+### Important security requirements
+
+The existing protocol must undergo independent security assessment before production use.
+
+Investigate its documented limitations, including centralized resolution, upgrade authority, lack of an independent audit, and multi-outcome probability drift.
+
+Do not imply that integrating the SDK makes the protocol audited or risk-free.
+
+Do not deploy a replacement PM-AMM unless there is a clearly documented technical or commercial reason.
+
+### Expected result
+
+The aggregator should support PREDICT as a native Solana liquidity and trading integration, while maintaining a modular architecture that allows other prediction-market venues to be connected independently.
+:::
 
 ### B. Liquidity management
 

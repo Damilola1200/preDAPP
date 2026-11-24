@@ -2,12 +2,12 @@
 
 One market. Multiple venues. Smarter execution.
 
-This repository is being built in stages. Step 1 (foundation and architecture) is complete; Step 2 adds read-only public market data from one venue. No trading integration is configured. Dashboard summary metrics and charts remain clearly labeled demo data.
+This repository is being built in stages. Steps 1 and 2 provide the foundation and read-only public market data from one venue. Step 3 adds external wallet connection, a server-side read-only Solana RPC proxy, quote simulation, and wallet balance display. No prediction-market order execution is configured. Dashboard summary metrics and charts remain clearly labeled demo data.
 
 ## Architecture
 
 - `apps/web`: Next.js App Router, React, TypeScript, Tailwind, TanStack Query, Solana Wallet Adapter.
-- `apps/api`: NestJS REST and WebSocket API, validation, configuration, structured logging, health endpoint.
+- `apps/api`: NestJS REST and WebSocket API, validation, configuration, structured logging, health endpoint, and read-only Solana RPC proxy.
 - `packages/database`: Prisma schema and migration tooling for PostgreSQL.
 - `programs`: reserved for future Anchor programs; no on-chain trading code is included in Step 1.
 - `apps/api/src/markets`: Polymarket read-only adapter, normalized market API, price history, order book reads, cache, and cautious canonical-market comparison utility.
@@ -30,7 +30,7 @@ Web: http://localhost:3000. API liveness: http://localhost:4000/api/v1/health. S
 
 ## Environment
 
-See `.env.example`. The frontend defaults to `NEXT_PUBLIC_DATA_MODE=mock`. This flag selects isolated display data and does not configure production services. The API requires `DATABASE_URL`, `REDIS_URL`, `API_PORT`, and `WEB_ORIGIN`. Solana cluster defaults to devnet. No credentials, endpoints, or program addresses are supplied.
+See `.env.example`. The frontend defaults to `NEXT_PUBLIC_DATA_MODE=mock`. This flag selects isolated display data and does not configure production services. The API requires `DATABASE_URL`, `REDIS_URL`, `API_PORT`, and `WEB_ORIGIN`. `SOLANA_NETWORK` accepts `devnet` or `mainnet`; `SOLANA_RPC_URL` and `SOLANA_WS_URL` are blank placeholders and must be supplied together. Keep provider URLs server-side; never add them to `NEXT_PUBLIC_*`. No RPC credentials or program addresses are supplied.
 
 ## Stage boundary
 
@@ -42,4 +42,20 @@ API routes: `GET /api/v1/markets?q=&category=&venue=&includeClosed=`, `GET /api/
 
 `NEXT_PUBLIC_DATA_MODE=live` is the default and uses the backend API. Set it to `mock` only to show the isolated synthetic card list. Live market cards identify Polymarket, show freshness and available volume/liquidity, and link to an internal detail page plus original source. The homepage's summary metrics, static dashboard chart, and sample opportunity cards remain demo-only. The canonical comparison helper requires structured outcome, resolution, expiration, and settlement information before returning an equivalence label; with one connected venue there are no cross-venue equivalent pairs or arbitrage claims.
 
-Explore and unrelated navigation destinations remain foundation placeholders. Solana Wallet Adapter context is prepared for devnet; wallet connection and all execution remain Step 3. The API uses default-deny auth and role guards for protected endpoints; the public read-only market endpoints explicitly bypass auth. No identity/signature verification provider is configured. PostgreSQL migration has not been applied in this environment; market data is not persisted there. Redis-backed shared caching, scheduled workers, WebSocket venue streams, a second venue, and cross-venue reconciliation remain incomplete.
+## Step 3 wallet and quote foundations
+
+The wallet control discovers compatible external Solana wallets through Wallet Standard. The API's `GET /api/v1/solana/rpc/health` reports the selected network and HTTP/WebSocket provider health without returning endpoint URLs. `POST /api/v1/solana/rpc` is a rate-limited, allowlisted read-only JSON-RPC proxy; transaction submission and signing methods are rejected. The UI shows RPC status and the connected wallet's SOL balance. Browser wallet calls use the API's HTTP proxy; WebSocket health is checked server-side.
+
+`POST /api/v1/markets/polymarket/:id/quote` simulates a BUY or SELL against a fresh public order-book depth snapshot, estimates venue fees when the public market fee schedule is known, and reports unknown network costs. Quotes are explicitly estimates and never trigger an order. No venue currently supports configured order submission, cancellation, order tracking, or verified prediction-market positions; portfolio positions are therefore honestly shown as unavailable. Mainnet order execution is disabled. RPC URLs remain placeholders until supplied by the project owner.
+
+## Step 4 PREDICT PM-AMM and risk intelligence
+
+The official `@pm-amm/sdk` v0.2.0 is integrated with the market registry and web client. The API reads PREDICT binary markets from a configured Devnet RPC, verifies the Devnet genesis hash, and normalizes the on-chain names, current model probability, outcome mints, pool value, and expiry. Resolution criteria and settlement source are absent from the account, so the canonical matcher does not treat PREDICT markets as equivalent solely by text. PREDICT probability/liquidity analytics use the SDK's published dynamic pm-AMM math, including current-state reserve rescaling; LVR is labeled as a modeled risk metric rather than a return.
+
+The `Trade`, `Liquidity`, and `Analytics` sections expose PREDICT Devnet market creation, USDC-to-outcome swap estimates, deposits, full LP withdrawals, residual claims, resolved winnings claims, pool analytics, and session probability samples. Every state-changing action requires an explicit wallet signature. Swap previews are short-lived, enforce a capped 0.5–3% minimum-output tolerance, and remain estimates. Signed transaction relay is disabled by default; after you provide the Devnet URLs, set `SOLANA_DEVNET_TRANSACTIONS=true` to enable it. The API will relay only single signed transactions when Devnet genesis verification passes, and it does not retry transaction submission. Mainnet transaction relay is rejected.
+
+The opportunity engine compares Polymarket and PREDICT definitions conservatively. It labels qualifying probability gaps statistical only, suppresses lookalikes without aligned settlement information, and leaves potential/verified executable opportunities disabled because Polymarket order execution and cross-venue reconciliation are not configured. Session analytics are not persisted; durable PREDICT price history, volume/fill indexing, execution-quality analytics, and complete cross-venue portfolio accounting remain incomplete.
+
+PREDICT's official docs disclose centralized resolution, a single-key upgrade authority, no independent audit, and multi-outcome probability drift. This integration does not imply the protocol is audited or risk-free. The app currently pins its integration to PREDICT Devnet and its official Devnet mock-USDC mint. See the [PREDICT builder guide](https://predict-pm-amm.dev/hackathon.md), [SDK reference](https://github.com/sparkfun-labs/pm-amm/blob/main/packages/sdk/README.md), and [protocol limitations](https://predict-pm-amm.dev/#7-limitations).
+
+Explore and unrelated navigation destinations remain foundation placeholders. The API uses default-deny auth and role guards for protected endpoints; public read-only market and RPC endpoints explicitly bypass auth and are rate-limited. No identity/signature verification provider is configured. PostgreSQL migration has not been applied in this environment; market data is not persisted there. Redis-backed shared caching, scheduled workers, WebSocket venue streams, Kalshi integration, durable PREDICT indexing, and cross-venue reconciliation remain incomplete.

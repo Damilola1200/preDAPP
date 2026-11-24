@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { AggregatedMarket, MarketOutcome, MarketSnapshot, MarketVenueAdapter, PriceHistory, PriceHistoryInterval, PricePoint } from './market.types';
+import { AggregatedMarket, BookLevel, MarketFeeSchedule, MarketOutcome, MarketSnapshot, MarketVenueAdapter, PriceHistory, PriceHistoryInterval, PricePoint } from './market.types';
+import { QuoteSide, simulateMarketQuote } from './quote-simulator';
 
 const GAMMA_URL = 'https://gamma-api.polymarket.com/events/keyset';
 const CLOB_BOOKS_URL = 'https://clob.polymarket.com/books';
@@ -28,6 +29,13 @@ function numberValue(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 function booleanValue(value: unknown, fallback = false): boolean { return typeof value === 'boolean' ? value : fallback; }
+function normalizeLevels(levels: unknown): BookLevel[] {
+  if (!Array.isArray(levels)) return [];
+  return levels.flatMap(level => {
+    const item = record(level); const price = numberValue(item?.price); const size = numberValue(item?.size);
+    return price !== null && price >= 0 && price <= 1 && size !== null && size > 0 ? [{ price, size }] : [];
+  });
+}
 
 export function normalizePolymarketEvents(events: unknown[], observedAt = new Date().toISOString()): AggregatedMarket[] {
   const normalized: AggregatedMarket[] = [];
@@ -59,8 +67,17 @@ export function normalizePolymarketEvents(events: unknown[], observedAt = new Da
         bestAsk: null,
         depth: null,
         bookObservedAt: null,
+        bookLevelsObservedAt: null,
+        bids: [],
+        asks: [],
       }] : []);
       const slug = stringValue(market.slug) ?? eventSlug;
+      const rawFeeSchedule = record(market.feeSchedule);
+      const feeSchedule: MarketFeeSchedule | null = rawFeeSchedule
+        && numberValue(rawFeeSchedule.rate) !== null && numberValue(rawFeeSchedule.exponent) !== null
+        && typeof rawFeeSchedule.takerOnly === 'boolean' && numberValue(rawFeeSchedule.rebateRate) !== null
+        ? { rate: numberValue(rawFeeSchedule.rate)!, exponent: numberValue(rawFeeSchedule.exponent)!, takerOnly: rawFeeSchedule.takerOnly, rebateRate: numberValue(rawFeeSchedule.rebateRate)! }
+        : null;
       normalized.push({
         id, eventId, venue: 'polymarket', venueName: 'Polymarket',
         venueUrl: slug ? `https://polymarket.com/market/${encodeURIComponent(slug)}` : null,
@@ -74,6 +91,8 @@ export function normalizePolymarketEvents(events: unknown[], observedAt = new Da
         volume: numberValue(market.volume) ?? numberValue(market.volumeNum) ?? numberValue(event.volume),
         volume24h: numberValue(market.volume24hr) ?? numberValue(event.volume24hr),
         liquidity: numberValue(market.liquidity) ?? numberValue(market.liquidityClob) ?? numberValue(event.liquidity),
+        feesEnabled: typeof market.feesEnabled === 'boolean' ? market.feesEnabled : null,
+        feeSchedule,
         sourceUpdatedAt: stringValue(market.updatedAt) ?? stringValue(event.updatedAt), observedAt, dataSource: 'gamma',
       });
     }
@@ -93,7 +112,7 @@ export class PolymarketAdapter implements OnModuleInit, OnModuleDestroy, MarketV
   private consecutiveFailures = 0;
   private syncing: Promise<void> | null = null;
   private timer?: ReturnType<typeof setInterval>;
-  private bookCache = new Map<string, { at: number; bid: number | null; ask: number | null; depth: number | null }>();
+  private bookCache = new Map<string, { at: number; levelsAt: number; bid: number | null; ask: number | null; depth: number | null; bids: BookLevel[]; asks: BookLevel[] }>();
   private historyCache = new Map<string, { at: number; points: PricePoint[] }>();
   private socket?: WebSocket;
   private socketHeartbeat?: ReturnType<typeof setInterval>;
@@ -134,6 +153,16 @@ export class PolymarketAdapter implements OnModuleInit, OnModuleDestroy, MarketV
     const found = this.markets.find(m => m.id === id);
     if (!found) return null;
     return (await this.attachBooks([found]))[0] ?? null;
+  }
+
+  async quote(id: string, outcomeIndex: number, side: QuoteSide, shares: number) {
+    if (!this.fetchedAt || Date.now() - Date.parse(this.fetchedAt) > CACHE_TTL_MS) await this.sync();
+    const market = this.markets.find(item => item.id === id);
+    if (!market || !market.outcomes[outcomeIndex]) return null;
+    const fresh = (await this.attachBooks([market], true))[0];
+    const outcome = fresh?.outcomes[outcomeIndex];
+    if (!fresh || !outcome) return null;
+    return simulateMarketQuote(fresh, outcome, side, shares);
   }
 
   async history(id: string, outcomeIndex: number, interval: PriceHistoryInterval = '1d'): Promise<PriceHistory | null> {
@@ -201,26 +230,26 @@ export class PolymarketAdapter implements OnModuleInit, OnModuleDestroy, MarketV
     }
   }
 
-  private async attachBooks(markets: AggregatedMarket[]): Promise<AggregatedMarket[]> {
+  private async attachBooks(markets: AggregatedMarket[], forceRefresh = false): Promise<AggregatedMarket[]> {
     const requests = markets.flatMap(m => m.outcomes.flatMap((outcome, i) => outcome.assetId
-      && (!this.bookCache.has(outcome.assetId) || Date.now() - this.bookCache.get(outcome.assetId)!.at > CACHE_TTL_MS)
+      && (forceRefresh || !this.bookCache.has(outcome.assetId) || Date.now() - this.bookCache.get(outcome.assetId)!.at > CACHE_TTL_MS)
       ? [{ marketId: m.id, index: i, assetId: outcome.assetId }] : []));
     for (let start = 0; start < requests.length; start += MAX_BOOK_ASSETS) {
       const batch = requests.slice(start, start + MAX_BOOK_ASSETS);
       try {
         const body: unknown = await this.requestJson(CLOB_BOOKS_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(batch.map(x => ({ token_id: x.assetId }))) });
         if (!Array.isArray(body)) continue;
-        const byAsset = new Map<string, { bid: number | null; ask: number | null; depth: number | null }>();
+        const byAsset = new Map<string, { bid: number | null; ask: number | null; depth: number | null; bids: BookLevel[]; asks: BookLevel[] }>();
         for (const entry of body) {
           const book = record(entry); const asset = stringValue(book?.asset_id);
           if (!asset) continue;
           const bids = Array.isArray(book?.bids) ? book.bids : []; const asks = Array.isArray(book?.asks) ? book.asks : [];
-          const bidPrices = bids.map(x => numberValue(record(x)?.price)).filter((x): x is number => x !== null);
-          const askPrices = asks.map(x => numberValue(record(x)?.price)).filter((x): x is number => x !== null);
+          const bidLevels = normalizeLevels(bids).sort((a, b) => b.price - a.price);
+          const askLevels = normalizeLevels(asks).sort((a, b) => a.price - b.price);
           const depth = [...bids, ...asks].reduce((sum, x) => sum + (numberValue(record(x)?.size) ?? 0), 0);
-          byAsset.set(asset, { bid: bidPrices.length ? Math.max(...bidPrices) : null, ask: askPrices.length ? Math.min(...askPrices) : null, depth });
+          byAsset.set(asset, { bid: bidLevels[0]?.price ?? null, ask: askLevels[0]?.price ?? null, depth, bids: bidLevels, asks: askLevels });
         }
-        for (const request of batch) { const book = byAsset.get(request.assetId); if (book) this.bookCache.set(request.assetId, { ...book, at: Date.now() }); }
+        for (const request of batch) { const book = byAsset.get(request.assetId); if (book) { const at = Date.now(); this.bookCache.set(request.assetId, { ...book, at, levelsAt: at }); } }
       } catch (error) {
         this.logger.warn(`Polymarket order book read failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       }
@@ -228,7 +257,8 @@ export class PolymarketAdapter implements OnModuleInit, OnModuleDestroy, MarketV
     return markets.map(m => ({ ...m, outcomes: m.outcomes.map(outcome => {
       const cached = outcome.assetId ? this.bookCache.get(outcome.assetId) : undefined;
       if (!cached || Date.now() - cached.at > CACHE_TTL_MS) return outcome;
-      return { ...outcome, bestBid: cached.bid, bestAsk: cached.ask, depth: cached.depth, bookObservedAt: new Date(cached.at).toISOString() };
+      return { ...outcome, bestBid: cached.bid, bestAsk: cached.ask, depth: cached.depth, bids: cached.bids, asks: cached.asks,
+        bookObservedAt: new Date(cached.at).toISOString(), bookLevelsObservedAt: new Date(cached.levelsAt).toISOString() };
     }) }));
   }
 
@@ -285,7 +315,9 @@ export class PolymarketAdapter implements OnModuleInit, OnModuleDestroy, MarketV
       const update = (asset: string | null, bid: number | null, ask: number | null, depth: number | null = null) => {
         if (!asset) return;
         const previous = this.bookCache.get(asset);
-        this.bookCache.set(asset, { at: Date.now(), bid: bid ?? previous?.bid ?? null, ask: ask ?? previous?.ask ?? null, depth: depth ?? previous?.depth ?? null });
+        this.bookCache.set(asset, { at: Date.now(), levelsAt: previous?.levelsAt ?? 0,
+          bid: bid ?? previous?.bid ?? null, ask: ask ?? previous?.ask ?? null, depth: depth ?? previous?.depth ?? null,
+          bids: previous?.bids ?? [], asks: previous?.asks ?? [] });
         this.lastStreamAt = new Date().toISOString();
       };
       if (type === 'book') {
@@ -294,8 +326,9 @@ export class PolymarketAdapter implements OnModuleInit, OnModuleDestroy, MarketV
         const asks = Array.isArray(event.asks) ? event.asks : Array.isArray(record(event.payload)?.asks) ? record(event.payload)!.asks as unknown[] : [];
         const bidPrices = bids.map(x => numberValue(record(x)?.price)).filter((x): x is number => x !== null);
         const askPrices = asks.map(x => numberValue(record(x)?.price)).filter((x): x is number => x !== null);
-        const depth = [...bids, ...asks].reduce((sum, x) => sum + (numberValue(record(x)?.size) ?? 0), 0);
-        update(asset, bidPrices.length ? Math.max(...bidPrices) : null, askPrices.length ? Math.min(...askPrices) : null, depth);
+        const bidLevels = normalizeLevels(bids).sort((a, b) => b.price - a.price); const askLevels = normalizeLevels(asks).sort((a, b) => a.price - b.price);
+        const depth = [...bidLevels, ...askLevels].reduce((sum, x) => sum + x.size, 0);
+        if (asset) { const at = Date.now(); this.bookCache.set(asset, { at, levelsAt: at, bid: bidLevels[0]?.price ?? null, ask: askLevels[0]?.price ?? null, depth, bids: bidLevels, asks: askLevels }); this.lastStreamAt = new Date().toISOString(); }
       } else if (type === 'best_bid_ask') {
         const payload = record(event.payload) ?? event;
         update(stringValue(payload.asset_id) ?? stringValue(payload.assetId), numberValue(payload.best_bid ?? payload.bestBid), numberValue(payload.best_ask ?? payload.bestAsk));

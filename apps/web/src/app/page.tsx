@@ -3,6 +3,8 @@ import { MarketList } from "@/components/market-list";
 import { MarketSearch } from "@/components/market-search";
 import { MobileMenuToggle } from "@/components/mobile-menu-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { WalletConnectButton } from "@/components/wallet-connect-button";
+import { SolanaRpcStatus } from "@/components/solana-rpc-status";
 import { mockOpportunities } from "@/lib/mock-markets";
 
 const nav = [
@@ -42,14 +44,14 @@ export default function Home() {
       <nav>{nav.map(item => <a className={`nav-link ${item.active ? "active" : ""}`} href={item.href} key={item.label}><span className="nav-icon">{item.icon}</span>{item.label}</a>)}</nav>
       <div className="side-bottom">
         <a className="nav-link" href="/settings"><span className="nav-icon">⚙</span>Settings</a>
-        <div className="nav-link" style={{ fontSize: 11, color: "#8290a0" }}>◎ &nbsp; Solana · Devnet</div>
+        <SolanaRpcStatus />
         <ApiStatus />
       </div>
     </aside>
     <section className="workspace">
       <header className="topbar">
         <div className="crumb"><MobileMenuToggle />Workspace&nbsp; / &nbsp;<b style={{ color: "#35404b" }}>Explore</b></div>
-        <div className="top-actions"><MarketSearch /><ThemeToggle /><button className="icon-btn" aria-label="Notifications">♧</button><button className="connect" disabled title="External wallet connection is planned for Step 3">Wallet · Step 3</button><span className="avatar">G</span></div>
+        <div className="top-actions"><MarketSearch /><ThemeToggle /><button className="icon-btn" aria-label="Notifications">♧</button><WalletConnectButton /><span className="avatar">G</span></div>
       </header>
       <main className="main">
         <div className="page-heading"><div><p className="eyebrow">TUESDAY, NOVEMBER 24, 2026</p><h1 className="title">Good morning, trader</h1><p className="sub">A clearer view of what the world thinks will happen.</p></div><span className="demo-tag"><i className="dot" /> SUMMARY DEMO METRICS</span></div>

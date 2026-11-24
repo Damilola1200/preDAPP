@@ -14,10 +14,10 @@ describe('normalizePolymarketEvents', () => {
     const market = normalized[0]!;
     expect(market).toMatchObject({ id: 'm-1', eventId: 'evt-1', venue: 'polymarket', category: null,
       tags: ['Science'], volume: 1234.5, volume24h: 10, liquidity: 200, closed: false,
-      resolutionCriteria: 'Resolution text', resolutionSource: 'Official results' });
+      resolutionCriteria: 'Resolution text', resolutionSource: 'Official results', feesEnabled: null, feeSchedule: null });
     expect(market.outcomes).toEqual([
-      { name: 'Yes', probability: 0.63, assetId: 'asset-yes', bestBid: null, bestAsk: null, depth: null, bookObservedAt: null },
-      { name: 'No', probability: 0.37, assetId: 'asset-no', bestBid: null, bestAsk: null, depth: null, bookObservedAt: null },
+      { name: 'Yes', probability: 0.63, assetId: 'asset-yes', bestBid: null, bestAsk: null, depth: null, bookObservedAt: null, bookLevelsObservedAt: null, bids: [], asks: [] },
+      { name: 'No', probability: 0.37, assetId: 'asset-no', bestBid: null, bestAsk: null, depth: null, bookObservedAt: null, bookLevelsObservedAt: null, bids: [], asks: [] },
     ]);
     expect(market.venueUrl).toContain('polymarket.com/market/market-slug');
   });
@@ -26,7 +26,7 @@ describe('normalizePolymarketEvents', () => {
     const items = normalizePolymarketEvents([{ markets: [null, { id: 'm-2', question: 'Question', version: 'v2',
       outcomes: ['Above'], outcomePrices: ['bad'], positionIds: ['position-1'], active: true }] }]);
     expect(items).toHaveLength(1);
-    expect(items[0]!.outcomes[0]!).toMatchObject({ assetId: 'position-1', probability: null, bookObservedAt: null });
+    expect(items[0]!.outcomes[0]!).toMatchObject({ assetId: 'position-1', probability: null, bookObservedAt: null, bookLevelsObservedAt: null, bids: [], asks: [] });
     expect(items[0]!.expiresAt).toBeNull();
   });
 
